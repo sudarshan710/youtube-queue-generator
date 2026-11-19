@@ -1,0 +1,412 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Queue Maker – build a YouTube queue from song names</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🎶</text></svg>">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:wght@600;800&family=DM+Sans:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#f5f2fb; --surface:#ffffff; --ink:#1c1530; --muted:#6c6485; --line:#e2dcf0;
+  --accent:#e6307a; --accent-ink:#ffffff; --blue:#4b33e0; --ok:#12805c; --warn:#b45309;
+  --radius:14px; color-scheme:light;
+}
+@media (prefers-color-scheme:dark){
+  :root:not([data-theme="light"]){
+    --bg:#140f24; --surface:#1e1736; --ink:#f1ecff; --muted:#a79fc4; --line:#33294f;
+    --accent:#ff4d94; --accent-ink:#1a0b14; --blue:#9b8cff; --ok:#43d6a0; --warn:#f5b04c; color-scheme:dark;
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#140f24; --surface:#1e1736; --ink:#f1ecff; --muted:#a79fc4; --line:#33294f;
+  --accent:#ff4d94; --accent-ink:#1a0b14; --blue:#9b8cff; --ok:#43d6a0; --warn:#f5b04c; color-scheme:dark;
+}
+*{box-sizing:border-box}
+html,body{margin:0}
+body{background:var(--bg);color:var(--ink);font:16px/1.5 "DM Sans",system-ui,sans-serif;min-height:100vh}
+.wrap{max-width:860px;margin:0 auto;padding:32px 20px 80px}
+header{display:flex;justify-content:space-between;align-items:flex-start;gap:16px;margin-bottom:28px}
+h1{font:800 clamp(2rem,6vw,3.2rem)/1 "Bricolage Grotesque",sans-serif;margin:0 0 8px;letter-spacing:-.02em}
+header p{margin:0;color:var(--muted);max-width:52ch}
+h2{font:600 1.15rem "Bricolage Grotesque",sans-serif;margin:0 0 12px}
+.card{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);padding:20px;margin-bottom:20px}
+button,input,textarea{font:inherit;color:inherit}
+input,textarea{width:100%;padding:10px 12px;border:1px solid var(--line);border-radius:10px;background:var(--bg)}
+input:focus,textarea:focus,button:focus-visible,summary:focus-visible{outline:2px solid var(--blue);outline-offset:2px}
+label{display:block;font-size:.85rem;font-weight:500;color:var(--muted);margin-bottom:4px}
+.grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.grid .full{grid-column:1/-1}
+@media(max-width:600px){.grid{grid-template-columns:1fr}}
+.btn{border:1px solid var(--line);background:var(--surface);padding:9px 14px;border-radius:10px;cursor:pointer;font-weight:500}
+.btn:hover{border-color:var(--blue)}
+.btn.primary{background:var(--accent);color:var(--accent-ink);border-color:transparent;font-weight:700}
+.btn.primary:hover{filter:brightness(1.07)}
+.btn.sm{padding:5px 9px;font-size:.85rem}
+.btn.danger:hover{border-color:var(--accent);color:var(--accent)}
+.btn:disabled{opacity:.5;cursor:not-allowed}
+.row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.row.end{justify-content:flex-end}
+.spread{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:12px}
+details{margin-top:14px}
+summary{cursor:pointer;color:var(--blue);font-weight:500}
+.hint{font-size:.85rem;color:var(--muted);margin:6px 0 0}
+ul{list-style:none;margin:0;padding:0}
+li.item{display:grid;grid-template-columns:auto 1fr auto;gap:12px;align-items:center;padding:12px 0;border-top:1px solid var(--line)}
+li.item:first-child{border-top:0}
+.pos{width:28px;height:28px;border-radius:50%;background:var(--bg);display:grid;place-items:center;font-size:.8rem;color:var(--muted);font-weight:700}
+.title{font-weight:700;overflow-wrap:anywhere}
+.artist{color:var(--muted);font-size:.92rem}
+.badge{display:inline-block;font-size:.75rem;padding:1px 8px;border-radius:99px;margin-left:6px;border:1px solid currentColor;vertical-align:middle}
+.badge.ok{color:var(--ok)} .badge.pending{color:var(--warn)}
+.edit-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px;grid-column:2/3}
+@media(max-width:600px){li.item{grid-template-columns:auto 1fr}li.item .row{grid-column:1/-1}.edit-grid{grid-template-columns:1fr}}
+.empty{text-align:center;color:var(--muted);padding:28px 8px}
+.result{background:var(--bg);border:1px dashed var(--blue);border-radius:10px;padding:12px;word-break:break-all;font-size:.85rem;margin-top:12px}
+li.log{padding:12px 0;border-top:1px solid var(--line)}
+li.log:first-child{border-top:0}
+.log-top{display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;align-items:center}
+.log-meta{font-weight:700}
+.log details{margin-top:6px}
+.log ol{margin:6px 0 0;padding-left:22px;color:var(--muted);font-size:.9rem}
+.log .url{font-size:.8rem;color:var(--muted);word-break:break-all;margin-top:6px}
+#toast{position:fixed;left:50%;bottom:24px;transform:translateX(-50%);background:var(--ink);color:var(--bg);padding:10px 16px;border-radius:10px;opacity:0;pointer-events:none;transition:opacity .2s;max-width:90vw}
+#toast.show{opacity:1}
+@media(prefers-reduced-motion:reduce){*{transition:none!important}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div>
+      <h1>Queue Maker</h1>
+      <p>List the songs you want, find each video, and open them all as one YouTube queue.</p>
+    </div>
+    <button class="btn sm" id="themeBtn" aria-label="Toggle dark mode">Theme</button>
+  </header>
+
+  <section class="card" aria-labelledby="addH">
+    <h2 id="addH">Add a song</h2>
+    <form id="addForm" class="grid" autocomplete="off">
+      <div><label for="fArtist">Channel / artist</label><input id="fArtist" required placeholder="IVE"></div>
+      <div><label for="fTitle">Video title</label><input id="fTitle" required placeholder="I AM"></div>
+      <div class="full"><label for="fUrl">YouTube link (optional, skips searching)</label><input id="fUrl" placeholder="https://www.youtube.com/watch?v=…"></div>
+      <div class="full row"><button class="btn primary" type="submit">Add song</button></div>
+    </form>
+    <details>
+      <summary>Add many at once</summary>
+      <label for="bulk" style="margin-top:10px">One song per line, as “Artist - Title”</label>
+      <textarea id="bulk" rows="5" placeholder="STAYC - Bubble&#10;NMIXX - Love Is Lonely"></textarea>
+      <div class="row" style="margin-top:8px"><button class="btn" id="bulkBtn" type="button">Add all lines</button></div>
+    </details>
+  </section>
+
+  <section class="card" aria-labelledby="listH">
+    <div class="spread">
+      <h2 id="listH" style="margin:0">Your songs <span id="count" class="artist"></span></h2>
+      <div class="row">
+        <button class="btn sm" id="sampleBtn">Load sample list</button>
+        <button class="btn sm" id="exportBtn">Export</button>
+        <button class="btn sm" id="importBtn">Import</button>
+        <button class="btn sm danger" id="clearBtn">Clear all</button>
+        <input type="file" id="importFile" accept="application/json" hidden>
+      </div>
+    </div>
+    <ul id="list"></ul>
+  </section>
+
+  <section class="card" aria-labelledby="buildH">
+    <h2 id="buildH">Build the queue</h2>
+    <div class="row">
+      <button class="btn" id="findBtn">1. Find videos</button>
+      <button class="btn primary" id="buildBtn">2. Create queue</button>
+    </div>
+    <div id="progress" class="hint" role="status"></div>
+    <div id="result" hidden>
+      <div class="result" id="queueUrl"></div>
+      <div class="row" style="margin-top:10px">
+        <a class="btn primary" id="openBtn" target="_blank" rel="noopener" style="text-decoration:none">Open in YouTube</a>
+        <button class="btn" id="copyBtn">Copy link</button>
+      </div>
+    </div>
+    <details>
+      <summary>YouTube API key (needed for “Find videos”)</summary>
+      <p class="hint">Browsers can’t run yt-dlp, so searching uses the YouTube Data API v3. Create a free key in Google Cloud Console and paste it here. It’s saved only in this browser. Each search uses 100 of your 10,000 free daily units, about 100 songs a day. Found videos are remembered, so you only search once per song.</p>
+      <label for="apiKey" style="margin-top:8px">API key</label>
+      <input id="apiKey" type="password" placeholder="AIza…" autocomplete="off">
+      <p class="hint">No key? Use “Search” on any song to open YouTube, copy the video link, and paste it via “Edit”.</p>
+    </details>
+  </section>
+
+  <section class="card" aria-labelledby="logH">
+    <div class="spread">
+      <h2 id="logH" style="margin:0">Queue log <span id="logCount" class="artist"></span></h2>
+      <button class="btn sm danger" id="logClear">Clear log</button>
+    </div>
+    <ul id="log"></ul>
+  </section>
+</div>
+<div id="toast" role="status"></div>
+
+<script>
+const KEY = "queueMaker.songs", KEYAPI = "queueMaker.apiKey", KEYTHEME = "queueMaker.theme";
+const SAMPLE = [["IVE","I AM"],["IVE","Rebel Heart"],["STAYC","Bubble"],["NMIXX","Love Is Lonely"],["LE SSERAFIM","HOT"],["BABYMONSTER","Billionaire"],["PURPLE KISS","Cursor"],["Weeekly","Good Day"]];
+const $ = id => document.getElementById(id);
+const store = {
+  get(k, d){ try { const v = localStorage.getItem(k); return v ? JSON.parse(v) : d; } catch { return d; } },
+  set(k, v){ try { localStorage.setItem(k, JSON.stringify(v)); } catch {} }
+};
+let songs = store.get(KEY, []);
+let editingId = null;
+let queueUrl = "";
+
+const uid = () => Math.random().toString(36).slice(2, 10);
+const esc = s => String(s).replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const save = () => store.set(KEY, songs);
+function toast(msg){ const t = $("toast"); t.textContent = msg; t.classList.add("show"); clearTimeout(toast.t); toast.t = setTimeout(() => t.classList.remove("show"), 2200); }
+
+function parseVideoId(input){
+  const s = (input || "").trim();
+  if (/^[\w-]{11}$/.test(s)) return s;
+  try {
+    const u = new URL(s);
+    if (u.hostname.includes("youtu.be")) return u.pathname.slice(1, 12) || null;
+    const v = u.searchParams.get("v");
+    if (v) return v;
+    const m = u.pathname.match(/\/(?:shorts|embed|live)\/([\w-]{11})/);
+    if (m) return m[1];
+  } catch {}
+  return null;
+}
+
+/* ---------- Create ---------- */
+function addSong(artist, title, url){
+  artist = artist.trim(); title = title.trim();
+  if (!artist || !title) return false;
+  const videoId = url ? parseVideoId(url) : null;
+  songs.push({ id: uid(), artist, title, videoId });
+  return true;
+}
+$("addForm").addEventListener("submit", e => {
+  e.preventDefault();
+  const url = $("fUrl").value;
+  if (url.trim() && !parseVideoId(url)) return toast("That doesn’t look like a YouTube link.");
+  addSong($("fArtist").value, $("fTitle").value, url);
+  save(); render();
+  $("fTitle").value = ""; $("fUrl").value = ""; $("fTitle").focus();
+});
+$("bulkBtn").onclick = () => {
+  let n = 0;
+  $("bulk").value.split("\n").forEach(line => {
+    const i = line.indexOf(" - ");
+    if (i > 0 && addSong(line.slice(0, i), line.slice(i + 3))) n++;
+  });
+  if (!n) return toast("No lines found. Use “Artist - Title”.");
+  $("bulk").value = ""; save(); render(); toast(`Added ${n} songs.`);
+};
+$("sampleBtn").onclick = () => { SAMPLE.forEach(([a, t]) => addSong(a, t)); save(); render(); toast("Sample songs added."); };
+
+/* ---------- Read ---------- */
+function render(){
+  $("count").textContent = songs.length ? `(${songs.length})` : "";
+  const ul = $("list");
+  if (!songs.length){ ul.innerHTML = `<li class="empty">No songs yet. Add one above to get started.</li>`; return; }
+  ul.innerHTML = songs.map((s, i) => {
+    if (s.id === editingId){
+      return `<li class="item" data-id="${s.id}">
+        <span class="pos">${i + 1}</span>
+        <div class="edit-grid">
+          <div><label>Channel / artist</label><input data-f="artist" value="${esc(s.artist)}"></div>
+          <div><label>Video title</label><input data-f="title" value="${esc(s.title)}"></div>
+          <div style="grid-column:1/-1"><label>YouTube link (optional)</label><input data-f="url" value="${s.videoId ? "https://www.youtube.com/watch?v=" + esc(s.videoId) : ""}"></div>
+        </div>
+        <div class="row"><button class="btn sm primary" data-act="save">Save</button><button class="btn sm" data-act="cancel">Cancel</button></div>
+      </li>`;
+    }
+    const q = encodeURIComponent(`${s.artist} ${s.title} official music video`);
+    return `<li class="item" data-id="${s.id}">
+      <span class="pos">${i + 1}</span>
+      <div>
+        <div class="title">${esc(s.title)}${s.videoId ? `<span class="badge ok">found</span>` : `<span class="badge pending">not searched</span>`}</div>
+        <div class="artist">${esc(s.artist)}</div>
+      </div>
+      <div class="row">
+        <button class="btn sm" data-act="up" aria-label="Move up" ${i === 0 ? "disabled" : ""}>↑</button>
+        <button class="btn sm" data-act="down" aria-label="Move down" ${i === songs.length - 1 ? "disabled" : ""}>↓</button>
+        <a class="btn sm" style="text-decoration:none" target="_blank" rel="noopener" href="${s.videoId ? "https://www.youtube.com/watch?v=" + esc(s.videoId) : "https://www.youtube.com/results?search_query=" + q}">${s.videoId ? "Watch" : "Search"}</a>
+        <button class="btn sm" data-act="edit">Edit</button>
+        <button class="btn sm danger" data-act="del">Delete</button>
+      </div>
+    </li>`;
+  }).join("");
+}
+
+/* ---------- Update / Delete / Reorder ---------- */
+$("list").addEventListener("click", e => {
+  const btn = e.target.closest("button[data-act]"); if (!btn) return;
+  const li = btn.closest("li"), id = li.dataset.id, i = songs.findIndex(s => s.id === id), act = btn.dataset.act;
+  if (act === "edit") editingId = id;
+  else if (act === "cancel") editingId = null;
+  else if (act === "save"){
+    const val = f => li.querySelector(`[data-f="${f}"]`).value.trim();
+    if (!val("artist") || !val("title")) return toast("Artist and title can’t be empty.");
+    const url = val("url"), vid = url ? parseVideoId(url) : null;
+    if (url && !vid) return toast("That doesn’t look like a YouTube link.");
+    const s = songs[i], changed = s.artist !== val("artist") || s.title !== val("title");
+    s.artist = val("artist"); s.title = val("title");
+    s.videoId = url ? vid : (changed ? null : s.videoId);
+    editingId = null; save();
+  }
+  else if (act === "del"){ const [r] = songs.splice(i, 1); save(); toast(`Deleted “${r.title}”.`); }
+  else if (act === "up" && i > 0){ [songs[i-1], songs[i]] = [songs[i], songs[i-1]]; save(); }
+  else if (act === "down" && i < songs.length - 1){ [songs[i+1], songs[i]] = [songs[i], songs[i+1]]; save(); }
+  render();
+});
+$("clearBtn").onclick = () => { if (songs.length && confirm("Delete all songs?")){ songs = []; save(); render(); } };
+
+/* ---------- Import / Export ---------- */
+$("exportBtn").onclick = () => {
+  if (!songs.length) return toast("Nothing to export.");
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(new Blob([JSON.stringify(songs, null, 2)], { type: "application/json" }));
+  a.download = "queue-songs.json"; a.click(); URL.revokeObjectURL(a.href);
+};
+$("importBtn").onclick = () => $("importFile").click();
+$("importFile").onchange = async e => {
+  const f = e.target.files[0]; if (!f) return;
+  try {
+    const data = JSON.parse(await f.text());
+    if (!Array.isArray(data)) throw 0;
+    let n = 0;
+    data.forEach(d => {
+      const artist = d.artist ?? d[0], title = d.title ?? d[1];
+      if (typeof artist === "string" && typeof title === "string"){
+        songs.push({ id: uid(), artist: artist.trim(), title: title.trim(), videoId: parseVideoId(d.videoId || "") });
+        n++;
+      }
+    });
+    save(); render(); toast(`Imported ${n} songs.`);
+  } catch { toast("That file isn’t a valid song list."); }
+  e.target.value = "";
+};
+
+/* ---------- Find videos (YouTube Data API) ---------- */
+$("apiKey").value = store.get(KEYAPI, "");
+$("apiKey").addEventListener("change", e => store.set(KEYAPI, e.target.value.trim()));
+
+async function searchVideo(artist, title, key){
+  const params = new URLSearchParams({ part: "snippet", type: "video", maxResults: "5", q: `${artist} ${title} official music video`, key });
+  const res = await fetch("https://www.googleapis.com/youtube/v3/search?" + params);
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.error?.message || "Search failed");
+  const items = data.items || [];
+  const match = items.find(v => v.snippet.title.toLowerCase().includes(title.toLowerCase()));
+  return (match || items[0])?.id?.videoId || null;
+}
+$("findBtn").onclick = async () => {
+  const key = $("apiKey").value.trim();
+  const todo = songs.filter(s => !s.videoId);
+  if (!songs.length) return toast("Add some songs first.");
+  if (!todo.length) return toast("Every song already has a video.");
+  if (!key){
+    $("progress").textContent = "Add a YouTube API key below, or paste video links through “Edit”.";
+    document.querySelector("#buildH").closest("section").querySelector("details").open = true;
+    return;
+  }
+  store.set(KEYAPI, key);
+  $("findBtn").disabled = true;
+  let found = 0, failed = 0;
+  for (const [n, s] of todo.entries()){
+    $("progress").textContent = `Searching ${n + 1} of ${todo.length}: ${s.artist} – ${s.title}`;
+    try {
+      const id = await searchVideo(s.artist, s.title, key);
+      if (id){ s.videoId = id; found++; } else failed++;
+    } catch (err){
+      $("progress").textContent = `Stopped: ${err.message}`;
+      save(); render(); $("findBtn").disabled = false; return;
+    }
+    save(); render();
+  }
+  $("progress").textContent = `Done. Found ${found}${failed ? `, no result for ${failed}` : ""}.`;
+  $("findBtn").disabled = false;
+};
+
+/* ---------- Build queue ---------- */
+$("buildBtn").onclick = () => {
+  const ready = songs.filter(s => s.videoId);
+  if (!ready.length) return toast("No videos yet. Click “Find videos” first.");
+  let ids = ready.map(s => s.videoId);
+  const notes = [];
+  if (ids.length > 50){ ids = ids.slice(0, 50); notes.push("YouTube accepts at most 50 videos, so only the first 50 are included."); }
+  const skipped = songs.length - ready.length;
+  if (skipped) notes.push(`${skipped} song${skipped > 1 ? "s" : ""} without a video ${skipped > 1 ? "were" : "was"} skipped.`);
+  queueUrl = "https://www.youtube.com/watch_videos?video_ids=" + ids.join(",");
+  $("queueUrl").textContent = queueUrl;
+  $("openBtn").href = queueUrl;
+  $("result").hidden = false;
+  $("progress").textContent = `Queue created with ${ids.length} videos. ${notes.join(" ")}`;
+  addLog(queueUrl, ready.slice(0, ids.length).map(s => `${s.artist} – ${s.title}`));
+};
+$("copyBtn").onclick = async () => {
+  try { await navigator.clipboard.writeText(queueUrl); toast("Link copied."); }
+  catch { toast("Couldn’t copy. Select the link and copy it manually."); }
+};
+
+/* ---------- Queue log ---------- */
+const KEYLOG = "queueMaker.log", LOG_MAX = 100;
+let logs = store.get(KEYLOG, []);
+
+function addLog(url, names){
+  // Re-creating the exact same queue just refreshes its entry instead of duplicating it.
+  logs = logs.filter(l => l.url !== url);
+  logs.unshift({ id: uid(), url, names, at: Date.now() });
+  logs = logs.slice(0, LOG_MAX);
+  store.set(KEYLOG, logs);
+  renderLog();
+}
+function renderLog(){
+  $("logCount").textContent = logs.length ? `(${logs.length})` : "";
+  const ul = $("log");
+  if (!logs.length){ ul.innerHTML = `<li class="empty">No queues yet. Every queue you create is saved here.</li>`; return; }
+  const fmt = new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeStyle: "short" });
+  ul.innerHTML = logs.map(l => `<li class="log" data-id="${l.id}">
+    <div class="log-top">
+      <div><span class="log-meta">${l.names.length} video${l.names.length === 1 ? "" : "s"}</span> <span class="artist">· ${esc(fmt.format(l.at))}</span></div>
+      <div class="row">
+        <a class="btn sm primary" style="text-decoration:none" target="_blank" rel="noopener" href="${esc(l.url)}">Open</a>
+        <button class="btn sm" data-act="copy">Copy link</button>
+        <button class="btn sm danger" data-act="del">Delete</button>
+      </div>
+    </div>
+    <details><summary>Show songs</summary><ol>${l.names.map(n => `<li>${esc(n)}</li>`).join("")}</ol></details>
+    <div class="url">${esc(l.url)}</div>
+  </li>`).join("");
+}
+$("log").addEventListener("click", async e => {
+  const btn = e.target.closest("button[data-act]"); if (!btn) return;
+  const id = btn.closest("li").dataset.id, entry = logs.find(l => l.id === id); if (!entry) return;
+  if (btn.dataset.act === "copy"){
+    try { await navigator.clipboard.writeText(entry.url); toast("Link copied."); }
+    catch { toast("Couldn’t copy. Select the link and copy it manually."); }
+  } else if (btn.dataset.act === "del"){
+    logs = logs.filter(l => l.id !== id); store.set(KEYLOG, logs); renderLog(); toast("Log entry deleted.");
+  }
+});
+$("logClear").onclick = () => { if (logs.length && confirm("Delete the whole queue log?")){ logs = []; store.set(KEYLOG, logs); renderLog(); } };
+
+/* ---------- Theme ---------- */
+const applyTheme = t => t ? document.documentElement.setAttribute("data-theme", t) : document.documentElement.removeAttribute("data-theme");
+applyTheme(store.get(KEYTHEME, null));
+$("themeBtn").onclick = () => {
+  const cur = document.documentElement.getAttribute("data-theme") || (matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light");
+  const next = cur === "dark" ? "light" : "dark";
+  applyTheme(next); store.set(KEYTHEME, next);
+};
+
+render();
+renderLog();
+</script>
+</body>
+</html>
