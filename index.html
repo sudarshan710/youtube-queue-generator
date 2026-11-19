@@ -65,6 +65,11 @@ li.item:first-child{border-top:0}
 @media(max-width:600px){li.item{grid-template-columns:auto 1fr}li.item .row{grid-column:1/-1}.edit-grid{grid-template-columns:1fr}}
 .empty{text-align:center;color:var(--muted);padding:28px 8px}
 .result{background:var(--bg);border:1px dashed var(--blue);border-radius:10px;padding:12px;word-break:break-all;font-size:.85rem;margin-top:12px}
+input[type=checkbox]{width:18px;height:18px;padding:0;accent-color:var(--accent)}
+input[type=search]{-webkit-appearance:none;appearance:none}
+li.cat{display:grid;grid-template-columns:auto 1fr auto;gap:12px;align-items:center;padding:10px 0;border-top:1px solid var(--line)}
+li.cat:first-child{border-top:0}
+@media(max-width:600px){li.cat .row{grid-column:1/-1}}
 li.log{padding:12px 0;border-top:1px solid var(--line)}
 li.log:first-child{border-top:0}
 .log-top{display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;align-items:center}
@@ -105,7 +110,7 @@ li.log:first-child{border-top:0}
 
   <section class="card" aria-labelledby="listH">
     <div class="spread">
-      <h2 id="listH" style="margin:0">Your songs <span id="count" class="artist"></span></h2>
+      <h2 id="listH" style="margin:0">Your playlist <span id="count" class="artist"></span></h2>
       <div class="row">
         <button class="btn sm" id="sampleBtn">Load sample list</button>
         <button class="btn sm" id="exportBtn">Export</button>
@@ -115,6 +120,26 @@ li.log:first-child{border-top:0}
       </div>
     </div>
     <ul id="list"></ul>
+  </section>
+
+  <section class="card" aria-labelledby="catH">
+    <div class="spread">
+      <h2 id="catH" style="margin:0">Song catalog <span id="catCount" class="artist"></span></h2>
+      <div class="row">
+        <button class="btn sm" id="catExport">Export</button>
+        <button class="btn sm" id="catImport">Import</button>
+        <input type="file" id="catFile" accept="application/json" hidden>
+      </div>
+    </div>
+    <p class="hint" style="margin:0 0 12px">Every video you find or paste is saved here automatically, so you never search for it twice. Pick songs to build your next playlist.</p>
+    <div class="row" style="margin-bottom:8px">
+      <input id="catFilter" type="search" placeholder="Filter by artist or title" aria-label="Filter catalog" style="flex:1 1 180px;width:auto">
+      <button class="btn sm" id="catSelAll">Select shown</button>
+      <button class="btn sm primary" id="catAddSel">Add selected to playlist</button>
+      <button class="btn sm danger" id="catDelSel">Delete selected</button>
+    </div>
+    <div class="hint" id="catSel" style="margin:0 0 4px"></div>
+    <ul id="cat"></ul>
   </section>
 
   <section class="card" aria-labelledby="buildH">
@@ -158,7 +183,20 @@ const store = {
   get(k, d){ try { const v = localStorage.getItem(k); return v ? JSON.parse(v) : d; } catch { return d; } },
   set(k, v){ try { localStorage.setItem(k, JSON.stringify(v)); } catch {} }
 };
+const KEYCAT = "queueMaker.catalog";
 let songs = store.get(KEY, []);
+let catalog = store.get(KEYCAT, []);
+const normKey = (a, t) => a.trim().toLowerCase() + "|" + t.trim().toLowerCase();
+const catFind = (a, t) => catalog.find(c => normKey(c.artist, c.title) === normKey(a, t));
+// Saves (or updates) a song's video in the catalog so it never needs searching again.
+function remember(s){
+  if (!s.videoId) return;
+  const c = catFind(s.artist, s.title);
+  if (c) c.videoId = s.videoId;
+  else catalog.push({ id: uid(), artist: s.artist, title: s.title, videoId: s.videoId, added: Date.now() });
+  store.set(KEYCAT, catalog);
+  renderCatalog();
+}
 let editingId = null;
 let queueUrl = "";
 
@@ -185,8 +223,11 @@ function parseVideoId(input){
 function addSong(artist, title, url){
   artist = artist.trim(); title = title.trim();
   if (!artist || !title) return false;
-  const videoId = url ? parseVideoId(url) : null;
-  songs.push({ id: uid(), artist, title, videoId });
+  let videoId = url ? parseVideoId(url) : null;
+  if (!videoId) videoId = catFind(artist, title)?.videoId || null;
+  const s = { id: uid(), artist, title, videoId };
+  songs.push(s);
+  remember(s);
   return true;
 }
 $("addForm").addEventListener("submit", e => {
@@ -257,6 +298,8 @@ $("list").addEventListener("click", e => {
     const s = songs[i], changed = s.artist !== val("artist") || s.title !== val("title");
     s.artist = val("artist"); s.title = val("title");
     s.videoId = url ? vid : (changed ? null : s.videoId);
+    if (!s.videoId) s.videoId = catFind(s.artist, s.title)?.videoId || null;
+    remember(s);
     editingId = null; save();
   }
   else if (act === "del"){ const [r] = songs.splice(i, 1); save(); toast(`Deleted “${r.title}”.`); }
@@ -283,7 +326,9 @@ $("importFile").onchange = async e => {
     data.forEach(d => {
       const artist = d.artist ?? d[0], title = d.title ?? d[1];
       if (typeof artist === "string" && typeof title === "string"){
-        songs.push({ id: uid(), artist: artist.trim(), title: title.trim(), videoId: parseVideoId(d.videoId || "") });
+        const s = { id: uid(), artist: artist.trim(), title: title.trim(), videoId: parseVideoId(d.videoId || "") };
+        if (!s.videoId) s.videoId = catFind(s.artist, s.title)?.videoId || null;
+        songs.push(s); remember(s);
         n++;
       }
     });
@@ -307,9 +352,11 @@ async function searchVideo(artist, title, key){
 }
 $("findBtn").onclick = async () => {
   const key = $("apiKey").value.trim();
+  const filled = fillFromCatalog();
+  if (filled){ save(); render(); }
   const todo = songs.filter(s => !s.videoId);
   if (!songs.length) return toast("Add some songs first.");
-  if (!todo.length) return toast("Every song already has a video.");
+  if (!todo.length) return toast(filled ? `Filled ${filled} from your catalog. Nothing to search.` : "Every song already has a video.");
   if (!key){
     $("progress").textContent = "Add a YouTube API key below, or paste video links through “Edit”.";
     document.querySelector("#buildH").closest("section").querySelector("details").open = true;
@@ -322,7 +369,7 @@ $("findBtn").onclick = async () => {
     $("progress").textContent = `Searching ${n + 1} of ${todo.length}: ${s.artist} – ${s.title}`;
     try {
       const id = await searchVideo(s.artist, s.title, key);
-      if (id){ s.videoId = id; found++; } else failed++;
+      if (id){ s.videoId = id; remember(s); found++; } else failed++;
     } catch (err){
       $("progress").textContent = `Stopped: ${err.message}`;
       save(); render(); $("findBtn").disabled = false; return;
@@ -352,6 +399,106 @@ $("buildBtn").onclick = () => {
 $("copyBtn").onclick = async () => {
   try { await navigator.clipboard.writeText(queueUrl); toast("Link copied."); }
   catch { toast("Couldn’t copy. Select the link and copy it manually."); }
+};
+
+/* ---------- Catalog ---------- */
+const selected = new Set();
+const sortedCatalog = () => [...catalog].sort((a, b) => (a.artist + a.title).toLowerCase().localeCompare((b.artist + b.title).toLowerCase()));
+function visibleCatalog(){
+  const q = $("catFilter").value.trim().toLowerCase();
+  return sortedCatalog().filter(c => !q || (c.artist + " " + c.title).toLowerCase().includes(q));
+}
+const inPlaylist = c => songs.some(s => s.videoId === c.videoId || normKey(s.artist, s.title) === normKey(c.artist, c.title));
+function fillFromCatalog(){
+  let n = 0;
+  songs.forEach(s => { if (!s.videoId){ const c = catFind(s.artist, s.title); if (c){ s.videoId = c.videoId; n++; } } });
+  return n;
+}
+function renderCatalog(){
+  $("catCount").textContent = catalog.length ? `(${catalog.length})` : "";
+  $("catSel").textContent = selected.size ? `${selected.size} selected` : "";
+  const ul = $("cat"), vis = visibleCatalog();
+  if (!catalog.length){ ul.innerHTML = `<li class="empty">Nothing saved yet. Videos you find or paste will appear here.</li>`; return; }
+  if (!vis.length){ ul.innerHTML = `<li class="empty">No songs match that filter.</li>`; return; }
+  ul.innerHTML = vis.map(c => `<li class="cat" data-id="${c.id}">
+    <input type="checkbox" aria-label="Select ${esc(c.title)}" ${selected.has(c.id) ? "checked" : ""}>
+    <div>
+      <div class="title">${esc(c.title)}${inPlaylist(c) ? `<span class="badge ok">in playlist</span>` : ""}</div>
+      <div class="artist">${esc(c.artist)}</div>
+    </div>
+    <div class="row">
+      <a class="btn sm" style="text-decoration:none" target="_blank" rel="noopener" href="https://www.youtube.com/watch?v=${esc(c.videoId)}">Watch</a>
+      <button class="btn sm" data-act="add">Add</button>
+      <button class="btn sm danger" data-act="del">Delete</button>
+    </div>
+  </li>`).join("");
+}
+function addFromCatalog(ids){
+  let n = 0, dup = 0;
+  ids.forEach(id => {
+    const c = catalog.find(x => x.id === id); if (!c) return;
+    if (inPlaylist(c)){ dup++; return; }
+    songs.push({ id: uid(), artist: c.artist, title: c.title, videoId: c.videoId }); n++;
+  });
+  save(); render(); renderCatalog();
+  toast(n ? `Added ${n} to your playlist${dup ? `, skipped ${dup} already there` : ""}.` : "Those songs are already in your playlist.");
+}
+function deleteFromCatalog(ids){
+  const set = new Set(ids);
+  catalog = catalog.filter(c => !set.has(c.id));
+  ids.forEach(id => selected.delete(id));
+  store.set(KEYCAT, catalog); renderCatalog();
+}
+$("catFilter").addEventListener("input", renderCatalog);
+$("cat").addEventListener("change", e => {
+  if (e.target.type !== "checkbox") return;
+  const id = e.target.closest("li").dataset.id;
+  e.target.checked ? selected.add(id) : selected.delete(id);
+  $("catSel").textContent = selected.size ? `${selected.size} selected` : "";
+});
+$("cat").addEventListener("click", e => {
+  const btn = e.target.closest("button[data-act]"); if (!btn) return;
+  const id = btn.closest("li").dataset.id;
+  if (btn.dataset.act === "add") addFromCatalog([id]);
+  else if (btn.dataset.act === "del"){ deleteFromCatalog([id]); toast("Removed from catalog."); }
+});
+$("catSelAll").onclick = () => {
+  const vis = visibleCatalog(), all = vis.length && vis.every(c => selected.has(c.id));
+  vis.forEach(c => all ? selected.delete(c.id) : selected.add(c.id));
+  renderCatalog();
+};
+$("catAddSel").onclick = () => {
+  if (!selected.size) return toast("Select songs in the catalog first.");
+  addFromCatalog([...selected]); selected.clear(); renderCatalog();
+};
+$("catDelSel").onclick = () => {
+  if (!selected.size) return toast("Select songs in the catalog first.");
+  if (confirm(`Remove ${selected.size} song(s) from the catalog?`)) deleteFromCatalog([...selected]);
+};
+$("catExport").onclick = () => {
+  if (!catalog.length) return toast("Nothing to export.");
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(new Blob([JSON.stringify(catalog, null, 2)], { type: "application/json" }));
+  a.download = "queue-catalog.json"; a.click(); URL.revokeObjectURL(a.href);
+};
+$("catImport").onclick = () => $("catFile").click();
+$("catFile").onchange = async e => {
+  const f = e.target.files[0]; if (!f) return;
+  try {
+    const data = JSON.parse(await f.text());
+    if (!Array.isArray(data)) throw 0;
+    let n = 0;
+    data.forEach(d => {
+      const vid = parseVideoId(d.videoId || "");
+      if (typeof d.artist === "string" && typeof d.title === "string" && vid){
+        const c = catFind(d.artist, d.title);
+        if (c) c.videoId = vid; else catalog.push({ id: uid(), artist: d.artist.trim(), title: d.title.trim(), videoId: vid, added: Date.now() });
+        n++;
+      }
+    });
+    store.set(KEYCAT, catalog); renderCatalog(); toast(`Imported ${n} songs.`);
+  } catch { toast("That file isn’t a valid catalog."); }
+  e.target.value = "";
 };
 
 /* ---------- Queue log ---------- */
@@ -405,7 +552,9 @@ $("themeBtn").onclick = () => {
   applyTheme(next); store.set(KEYTHEME, next);
 };
 
+songs.forEach(remember); // backfill catalog from songs found before the catalog existed
 render();
+renderCatalog();
 renderLog();
 </script>
 </body>
